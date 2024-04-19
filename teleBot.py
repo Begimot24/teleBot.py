@@ -15,6 +15,18 @@ cursor.execute("set search_path to speciality_bot_schema")
 
 yes_no = ''
 
+#Функция проверки. Набрал ли человек пороговые баллы для поступления в ВУЗ
+def check(subject1, score1, subject2, score2, subject3, score3):
+    is_passing = False
+    cursor.execute("select passing_score from subjects where name = %s", (subject1,))
+    passing_score1 = cursor.fetchone()
+    cursor.execute("select passing_score from subjects where name = %s", (subject2,))
+    passing_score2 = cursor.fetchone()[0]
+    cursor.execute("select passing_score from subjects where name = %s", (subject3,))
+    passing_score3 = cursor.fetchone()[0]
+    if (score1 >= passing_score1 and score2 >= passing_score2 and score3 >= passing_score3):
+        is_passing = True
+    return(is_passing)
 
 class Person:
     def __init__(self, name='', surname='', age=0, subject1='', subject2='', subject3=''):
@@ -36,19 +48,6 @@ mark1 = 0
 mark2 = 0
 mark3 = 0
 person1 = Person()
-
-#Функция проверки. Набрал ли человек пороговые баллы для поступления в ВУЗ
-def check(subject1, score1, subject2, score2, subject3, score3):
-    is_passing = False
-    cursor.execute("select passing_score from subjects where name = %s", (subject1,))
-    passing_score1 = cursor.fetchone()[0]
-    cursor.execute("select passing_score from subjects where name = %s", (subject2,))
-    passing_score2 = cursor.fetchone()[0]
-    cursor.execute("select passing_score from subjects where name = %s", (subject3,))
-    passing_score3 = cursor.fetchone()[0]
-    if (score1 >= passing_score1 and score2 >= passing_score2 and score3 >= passing_score3):
-        is_passing = True
-    return(is_passing)
 
 # Ниже расположены функции, которые управляют начальным диалогом бота с польлзователем.
 
@@ -168,69 +167,69 @@ def sub1_mark(message):
     mark1 = message.text
     bot.send_message(message, 'Ваша оценка, по предмету: ' + person1.subject1 + ' ' + mark1)
 
+def find(message):
+    #Если пороговые баллы по всем предметам набраны начинаем выбирать специальность
+    if (check(person1.subject1, mark1, person1.subject2, mark2, person1.subject3, mark3)):
+        #заполняем массив предметов.он хранит айдишники сданных предметов
+        cursor.execute("select id from subjects where name in (%s, %s, %s)",(person1.subject1,person1.subject2,person1.subject3,))
+        subjects = cursor.fetchall()
+        s = list(map(lambda s: s[0],subjects))
 
-#Если пороговые баллы по всем предметам набраны начинаем выбирать специальность
-if (check(person1.subject1, mark1, person1.subject2, mark2, person1.subject3, mark3)):
-    #заполняем массив предметов.он хранит айдишники сданных предметов
-    cursor.execute("select id from subjects where name in (%s, %s, %s)",(person1.subject1,person1.subject2,person1.subject3,))
-    subjects = cursor.fetchall()
-    s = list(map(lambda s: s[0],subjects))
+        #выбираем специальности, для которых подходит данный набор предметов, пока не учитываем сумму баллов
+        cursor.execute("select specialities_id from specialities_subjects where subjects_id in (%s, %s, %s) group by specialities_id having count(distinct subjects_id) = 3", (subjects[0], subjects[1], subjects[2],))
+        sp_id = cursor.fetchall()
+        sp_id = list(map(lambda s: s[0],sp_id))
+        #массив specialities будет хранить все специальности, подходящие по сумме баллов и предметам.
+        #сеты passing_faculty, passing_degree факультеты и степени(бакалавр и тд) этих специальностей
+        specialities = []
+        passing_faculty = set()
+        passing_degree = set()
+        #заполняем массив, сравнивая сумму баллов с проходным прошлого года
+        score = mark1 + mark2 + mark3
+        for i in sp_id:
+            cursor.execute("select name, faculty, degree from specialities where id = %s and passing_score <= %s", (i,score,))
+            x = cursor.fetchone()
+            if x != None:
+                specialities.append(x)
+                passing_faculty.add(x[1])
+                passing_degree.add(x[2])
 
-    #выбираем специальности, для которых подходит данный набор предметов, пока не учитываем сумму баллов
-    cursor.execute("select specialities_id from specialities_subjects where subjects_id in (%s, %s, %s) group by specialities_id having count(distinct subjects_id) = 3", (subjects[0], subjects[1], subjects[2],))
-    sp_id = cursor.fetchall()
-    sp_id = list(map(lambda s: s[0],sp_id))
-    #массив specialities будет хранить все специальности, подходящие по сумме баллов и предметам.
-    #сеты passing_faculty, passing_degree факультеты и степени(бакалавр и тд) этих специальностей
-    specialities = []
-    passing_faculty = set()
-    passing_degree = set()
-    #заполняем массив, сравнивая сумму баллов с проходным прошлого года
-    score = mark1 + mark2 + mark3
-    for i in sp_id:
-        cursor.execute("select name, faculty, degree from specialities where id = %s and passing_score <= %s", (i,score,))
-        x = cursor.fetchone()
-        if x != None:
-            specialities.append(x)
-            passing_faculty.add(x[1])
-            passing_degree.add(x[2])
+        #по сумме баллов подходит 0 специальностей. пишем что подходящих специальностей нет
+        if len(specialities) == 0:
+            bot.send_message(message.from_user.id, "Нет подходящих специальностей")
 
-    #по сумме баллов подходит 0 специальностей. пишем что подходящих специальностей нет
-    if len(specialities) == 0:
-        print('no suitable specialities')
-
-    # по сумме баллов подходит несколько специальностей
-    elif len(specialities) > 1 and len(passing_faculty) > 1:
-        #бот спрашивает предпочтения человека и заносит факультеты в массив faculty
-        faculty = ['инженерной механики', 'комплексной безопасности ТЭК']
-        #массив, хранящий специальности, с учетом выбранных факультетов
-        sp_faculty = []
-        for i in specialities:
-            if i[1] in faculty:
-                sp_faculty.append(i)
-
-        #если есть выбор спец/бакалавр спрашиваем
-        if len(sp_faculty) > 1 and len(passing_degree) > 1:
-            # массив, хранящий специальности, с учетом выбранных факультетов и уровня подготовки(спец/бакалавр)
-            dg_sp_faculty = []
-            degree = ['Специалитет']
+        # по сумме баллов подходит несколько специальностей
+        elif len(specialities) > 1 and len(passing_faculty) > 1:
+            #бот спрашивает предпочтения человека и заносит факультеты в массив faculty
+            faculty = ['инженерной механики', 'комплексной безопасности ТЭК']
+            #массив, хранящий специальности, с учетом выбранных факультетов
+            sp_faculty = []
             for i in specialities:
-                if i[2] in degree:
-                    dg_sp_faculty.append(i)
-            for i in dg_sp_faculty:
-                print(i[0])
+                if i[1] in faculty:
+                    sp_faculty.append(i)
 
-        #выбор с/б отсутствует
+            #если есть выбор спец/бакалавр спрашиваем
+            if len(sp_faculty) > 1 and len(passing_degree) > 1:
+                # массив, хранящий специальности, с учетом выбранных факультетов и уровня подготовки(спец/бакалавр)
+                dg_sp_faculty = []
+                degree = ['Специалитет']
+                for i in specialities:
+                    if i[2] in degree:
+                        dg_sp_faculty.append(i)
+                for i in dg_sp_faculty:
+                    bot.send_message(message.from_user.id, dg_sp_faculty[0][0], 'факультет', dg_sp_faculty[0][1])
+
+            #выбор с/б отсутствует
+            else:
+                bot.send_message(message.from_user.id, sp_faculty[0][0], 'факультет', sp_faculty[0][1])
+
+        #по сумме баллов подходит 1 специальность .выводим ее
         else:
-            print(sp_faculty)
+            bot.send_message(message.from_user.id, specialities[0][0], 'факультет', specialities[0][0])
 
-    #по сумме баллов подходит 1 специальность .выводим ее
+    #Пороговые баллы не набраны
     else:
-        print(specialities[0][0], 'факультет', specialities[0][0])
-
-#Пороговые баллы не набраны
-else:
-    print("too small score")
+        bot.send_message(message.from_user.id, "Не набраны минимальные баллы для поступления в ВУЗ")
 
 
 conn.close()
