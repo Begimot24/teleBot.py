@@ -154,7 +154,7 @@ def get_subject_score(message):
     # markup.add(button_yes, button_no)
 
     question = 'Давайте убедимся, всё ли верно. ' + person1.name + ' ' + person1.surname + ', предметы, которые вы сдавали: ' + person1.subject1 + ' ' + person1.subject2 + ' верно?'
-    question2 = 'Давайте убедимся, всё ли верно. ' + person1.name + ' ' + person1.surname + ', предметы, которые вы сдавали: ' + person1.subject1 + ' ' + person1.subject2 + ' ' + subject3 + ' верно?'
+    question2 = 'Давайте убедимся, всё ли верно. ' + person1.name + ' ' + person1.surname + ', предметы, которые вы сдавали: ' + person1.subject1 + ' ' + person1.subject2 + ' ' + person1.subject3 + ' верно?'
     bot.send_message(message.from_user.id, text=question, reply_markup=markup)
 
     bot.register_next_step_handler()
@@ -169,10 +169,10 @@ def sub1_mark(message):
     bot.send_message(message, 'Ваша оценка, по предмету: ' + person1.subject1 + ' ' + mark1)
 
 
-#Если пороговые баллы по всем предметам набрвны начинаем выбирать специальность
-if (check(subject1, mark1, subject2, mark2, subject3, mark3)):
+#Если пороговые баллы по всем предметам набраны начинаем выбирать специальность
+if (check(person1.subject1, mark1, person1.subject2, mark2, person1.subject3, mark3)):
     #заполняем массив предметов.он хранит айдишники сданных предметов
-    cursor.execute("select id from subjects where name in (%s, %s, %s)",(subject1,subject2,subject3,))
+    cursor.execute("select id from subjects where name in (%s, %s, %s)",(person1.subject1,person1.subject2,person1.subject3,))
     subjects = cursor.fetchall()
     s = list(map(lambda s: s[0],subjects))
 
@@ -232,4 +232,6 @@ if (check(subject1, mark1, subject2, mark2, subject3, mark3)):
 else:
     print("too small score")
 
+
+conn.close()
 bot.infinity_polling()
